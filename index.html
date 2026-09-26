@@ -161,6 +161,17 @@ footer{margin-top:36px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1
   background:#0a0a0a;
 }
 .media-frame video{outline:none}
+.media-frame iframe{
+  width:100%;aspect-ratio:16/9;max-height:340px;border:0;display:block;background:#000;
+}
+.media-link{
+  display:block;padding:14px 16px;text-align:center;
+  color:#ccc;font-size:.8rem;letter-spacing:.5px;
+  text-decoration:none;border:1px dashed rgba(255,255,255,.2);
+  border-radius:12px;margin-bottom:10px;transition:all .3s;
+  font-family:system-ui,-apple-system,sans-serif;
+}
+.media-link:hover{border-color:rgba(255,255,255,.45);color:#fff;background:rgba(255,255,255,.04)}
 
 .post-card{padding:4px 0 8px}
 .post-title{font-size:1.05rem;color:#f0f0f0;margin-bottom:8px;letter-spacing:.4px}
@@ -191,6 +202,20 @@ footer{margin-top:36px;padding-top:14px;border-top:1px solid rgba(255,255,255,.1
   border-radius:50px;cursor:pointer;transition:all var(--t);
 }
 .close-pill:hover{background:var(--btn-hover);border-color:rgba(255,255,255,.6);color:#fff;transform:translateY(-2px)}
+
+
+.post-text.clamped{
+  display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;
+  overflow:hidden;max-height:8.5em;
+}
+.post-more{
+  display:inline-block;margin-top:10px;
+  background:transparent;border:1.5px solid rgba(255,255,255,.25);
+  color:#ddd;font-family:'Russo One',sans-serif;font-size:.68rem;
+  letter-spacing:1.2px;text-transform:uppercase;
+  padding:8px 18px;border-radius:50px;cursor:pointer;transition:all var(--t);
+}
+.post-more:hover{border-color:rgba(255,255,255,.55);color:#fff;background:rgba(255,255,255,.06)}
 
 .modal-empty{text-align:center;color:#666;font-size:.85rem;padding:40px 10px}
 
@@ -313,9 +338,70 @@ var btnPrev=document.getElementById('btnPrev');
 var btnNext=document.getElementById('btnNext');
 var backdrop=document.getElementById('infoBackdrop');
 
-function isVideo(url){
+function isFileVideo(url){
   if(!url) return false;
-  return /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url) || /video/i.test(url);
+  return /\.(mp4|webm|ogg|mov)(\?|$)/i.test(url);
+}
+function isGif(url){
+  if(!url) return false;
+  return /\.gif(\?|$)/i.test(url) || /tenor\.com|giphy\.com/i.test(url);
+}
+function youtubeId(url){
+  if(!url) return null;
+  var m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+  return m ? m[1] : null;
+}
+function vimeoId(url){
+  if(!url) return null;
+  var m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
+  return m ? m[1] : null;
+}
+function rutubeId(url){
+  if(!url) return null;
+  var m = url.match(/rutube\.ru\/(?:video\/|play\/embed\/)([A-Za-z0-9]+)/);
+  return m ? m[1] : null;
+}
+function vkVideo(url){
+  if(!url) return null;
+  var m = url.match(/vk\.com\/video(-?\d+)_(\d+)/) || url.match(/vkvideo\.ru\/video(-?\d+)_(\d+)/);
+  return m ? {oid:m[1], id:m[2]} : null;
+}
+
+function classifyUrl(url){
+  if(!url) return null;
+  var yt = youtubeId(url);
+  if(yt) return {type:'embed', src:'https://www.youtube.com/embed/'+yt};
+  var vm = vimeoId(url);
+  if(vm) return {type:'embed', src:'https://player.vimeo.com/video/'+vm};
+  var rt = rutubeId(url);
+  if(rt) return {type:'embed', src:'https://rutube.ru/play/embed/'+rt};
+  var vk = vkVideo(url);
+  if(vk) return {type:'embed', src:'https://vk.com/video_ext.php?oid='+vk.oid+'&id='+vk.id};
+  if(isFileVideo(url)) return {type:'video', url:url};
+  if(isGif(url) || /\.(jpe?g|png|webp|bmp)(\?|$)/i.test(url) || /avatars\.|cdn\.|image/i.test(url))
+    return {type:'image', url:url};
+  // yandex video page etc — link only
+  if(/yandex\.(ru|com)\/video|youtu|vk\.com|rutube/i.test(url))
+    return {type:'link', url:url, label:'Смотреть видео'};
+  return {type:'image', url:url};
+}
+
+function pushUrl(list, url){
+  var c = classifyUrl(url);
+  if(c) list.push(c);
+}
+
+function collectMedia(p){
+  var list=[];
+  function addMany(arr){ if(Array.isArray(arr)) arr.forEach(function(u){ pushUrl(list,u); }); }
+  addMany(p.images);
+  addMany(p.videos);
+  addMany(p.media);
+  if(p.youtube) pushUrl(list, p.youtube);
+  if(p.video) pushUrl(list, p.video);
+  if(p.image) pushUrl(list, p.image);
+  if(p.link) list.push({type:'link', url:p.link, label:p.link_label||'Открыть ссылку'});
+  return list;
 }
 
 function renderPost(){
@@ -333,20 +419,46 @@ function renderPost(){
   btnNext.disabled=idx>=posts.length-1;
 
   var html='<div class="post-card">';
-  var media=p.video||p.image||'';
-  if(media){
+  var media=collectMedia(p);
+  for(var i=0;i<media.length;i++){
+    var m=media[i];
+    if(m.type==='link'){
+      html+='<a class="media-link" href="'+m.url+'" target="_blank" rel="noopener">'+(m.label||'Открыть')+' ↗</a>';
+      continue;
+    }
     html+='<div class="media-frame">';
-    if(p.video||isVideo(media)){
-      html+='<video src="'+media+'" controls playsinline preload="metadata"></video>';
+    if(m.type==='embed'){
+      html+='<iframe src="'+m.src+'" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>';
+    } else if(m.type==='video'){
+      html+='<video src="'+m.url+'" controls playsinline preload="metadata"></video>';
     } else {
-      html+='<img src="'+media+'" alt="" loading="lazy" draggable="false">';
+      html+='<img src="'+m.url+'" alt="" loading="lazy" draggable="false">';
     }
     html+='</div>';
   }
   if(p.title) html+='<div class="post-title">'+esc(p.title)+'</div>';
-  if(p.text) html+='<div class="post-text">'+esc(p.text)+'</div>';
+  if(p.text){
+    var long = p.text.length > 180;
+    html+='<div class="post-text'+(long?' clamped':'')+'" id="postText">'+esc(p.text)+'</div>';
+    if(long){
+      html+='<button class="post-more" type="button" id="btnMore">Далее</button>';
+    }
+  }
   html+='</div>';
   view.innerHTML=html;
+  var more=document.getElementById('btnMore');
+  if(more){
+    more.addEventListener('click',function(){
+      var el=document.getElementById('postText');
+      if(el.classList.contains('clamped')){
+        el.classList.remove('clamped');
+        more.textContent='Свернуть';
+      } else {
+        el.classList.add('clamped');
+        more.textContent='Далее';
+      }
+    });
+  }
 }
 
 function esc(s){
